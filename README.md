@@ -30,4 +30,3 @@ Für detaillierte Anleitungen siehe den Ordner [`docs/`](docs/).
 ## ⚖️ Lizenz
 
 Dieses Projekt steht unter der MIT-Lizenz.
-```
