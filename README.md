@@ -1,4 +1,4 @@
-# Proxmox Scripts
+# Proxmox Scripts (Testphase)
 
 Dieses Repository enthält Skripte zur Automatisierung von LXC- und VM-Deployments auf Proxmox.
 
