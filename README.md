@@ -20,7 +20,7 @@ git clone https://github.com/DEIN-GITHUB-NAME/proxmox-scripts.git
 
 Beispiel für die Bereitstellung eines ERPNext 15 Containers:
 ```bash
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/DEIN-GITHUB-NAME/proxmox-scripts/main/ct/erpnext15.sh)"
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/klugec88/proxmox-scripts/main/ct/erpnext15.sh)"
 ```
 
 ## 📖 Dokumentation
