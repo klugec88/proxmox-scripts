@@ -13,7 +13,7 @@ Dieses Repository enthält Skripte zur Automatisierung von LXC- und VM-Deploymen
 
 Klonen des Repositories:
 ```bash
-git clone https://github.com/DEIN-GITHUB-NAME/proxmox-scripts.git
+git clone https://github.com/klugec88/proxmox-scripts.git
 ```
 
 ## 🚀 Nutzung
