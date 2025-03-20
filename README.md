@@ -1,4 +1,4 @@
-# Proxmox Scripts (Testphase)
+# Proxmox Scripts (Testphase - NICHT NUTZEN!!)
 
 Dieses Repository enthält Skripte zur Automatisierung von LXC- und VM-Deployments auf Proxmox.
 
