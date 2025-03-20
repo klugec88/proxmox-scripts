@@ -1,0 +1,7 @@
+### motd.txt (im Ordner /functions)
+
+Willkommen auf Ihrem ERPNext-Server!
+
+- ERPNext läuft auf dieser Maschine.
+- Nutzen Sie 'bench' für Wartungsaufgaben.
+- Dokumentation: https://frappeframework.com/docs
