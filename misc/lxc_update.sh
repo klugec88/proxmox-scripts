@@ -33,6 +33,8 @@ done < <(pct list | awk 'NR>1')
 excluded_containers=$(whiptail --backtitle "Proxmox LXC Updater" --title "Container auf $NODE" --checklist "\nContainer auswählen, die NICHT aktualisiert werden sollen:\n" 16 $((MSG_MAX_LENGTH + 23)) 6 "${EXCLUDE_MENU[@]}" 3>&1 1>&2 2>&3 | tr -d '"') || exit
 
 declare -a containers_needing_reboot
+updated_containers=()
+skipped_containers=()
 
 function update_container() {
   container=$1
@@ -45,8 +47,9 @@ function update_container() {
     fedora | rocky | centos | alma) pct exec "$container" -- bash -c "dnf -y update && dnf -y upgrade" ;;
     ubuntu | debian | devuan) pct exec "$container" -- bash -c "apt-get update && apt-get -yq dist-upgrade" ;;
     opensuse) pct exec "$container" -- bash -c "zypper ref && zypper --non-interactive dup" ;;
-    *) echo "[Warnung] OS $os wird nicht unterstützt oder nicht erkannt." ;;
+    *) echo "[Warnung] OS $os wird nicht unterstützt oder nicht erkannt." ; return ;;
   esac
+  updated_containers+=("$container ($name)")
   if pct exec "$container" -- [ -e "/var/run/reboot-required" ]; then
     containers_needing_reboot+=("$container ($name)")
   fi
@@ -55,6 +58,7 @@ function update_container() {
 for container in $(pct list | awk 'NR>1 {print $1}'); do
   if [[ " ${excluded_containers[@]} " =~ " $container " ]]; then
     echo "[Info] Überspringe Container $container"
+    skipped_containers+=("$container")
     continue
   fi
   status=$(pct status $container | awk '{print $2}')
@@ -66,9 +70,17 @@ for container in $(pct list | awk 'NR>1 {print $1}'); do
   update_container "$container"
 done
 
+header_info
+echo -e "\n[Info] Update abgeschlossen!"
+if [ "${#updated_containers[@]}" -gt 0 ]; then
+  echo -e "\n[Erfolgreich aktualisierte Container]:"
+  printf '%s\n' "${updated_containers[@]}"
+fi
+if [ "${#skipped_containers[@]}" -gt 0 ]; then
+  echo -e "\n[Übersprungene Container]:"
+  printf '%s\n' "${skipped_containers[@]}"
+fi
 if [ "${#containers_needing_reboot[@]}" -gt 0 ]; then
   echo -e "\n[Hinweis] Die folgenden Container benötigen einen Neustart:"
   printf '%s\n' "${containers_needing_reboot[@]}"
 fi
-
-echo -e "\n[Info] Update abgeschlossen!"
