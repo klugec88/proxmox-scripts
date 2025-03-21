@@ -32,15 +32,16 @@ done < <(pct list | awk 'NR>1')
 
 excluded_containers=$(whiptail --backtitle "Proxmox LXC Updater" --title "Container auf $NODE" --checklist "\nContainer auswählen, die NICHT aktualisiert werden sollen:\n" 16 $((MSG_MAX_LENGTH + 23)) 6 "${EXCLUDE_MENU[@]}" 3>&1 1>&2 2>&3 | tr -d '"') || exit
 
-declare -a containers_needing_reboot
-updated_containers=()
-skipped_containers=()
+declare -a containers_needing_reboot=()
+declare -a updated_containers=()
+declare -a skipped_containers=()
 
 function update_container() {
   container=$1
   name=$(pct exec "$container" hostname 2>/dev/null || echo "Unbekannt")
   os=$(pct config "$container" | awk '/^ostype/ {print $2}')
   echo -e "\n[Info] Aktualisiere Container: $container ($name, OS: $os)\n"
+  pct exec "$container" -- bash -c "export LANG=C.UTF-8; export LC_ALL=C.UTF-8"
   case "$os" in
     alpine) pct exec "$container" -- ash -c "apk update && apk upgrade" ;;
     archlinux) pct exec "$container" -- bash -c "pacman -Syyu --noconfirm" ;;
