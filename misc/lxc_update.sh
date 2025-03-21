@@ -36,12 +36,21 @@ declare -a containers_needing_reboot=()
 declare -a updated_containers=()
 declare -a skipped_containers=()
 
+function set_locale() {
+  container=$1
+  current_locale=$(pct exec "$container" -- bash -c "echo \$LANG" 2>/dev/null || echo "")
+  if [[ -z "$current_locale" || "$current_locale" == "C" || "$current_locale" == "C.UTF-8" ]]; then
+    pct exec "$container" -- bash -c "echo 'LANG=de_DE.UTF-8' > /etc/default/locale"
+    pct exec "$container" -- bash -c "locale-gen de_DE.UTF-8 && update-locale LANG=de_DE.UTF-8"
+  fi
+}
+
 function update_container() {
   container=$1
   name=$(pct exec "$container" hostname 2>/dev/null || echo "Unbekannt")
   os=$(pct config "$container" | awk '/^ostype/ {print $2}')
   echo -e "\n[Info] Aktualisiere Container: $container ($name, OS: $os)\n"
-  pct exec "$container" -- bash -c "export LANG=C.UTF-8; export LC_ALL=C.UTF-8"
+  set_locale "$container"
   case "$os" in
     alpine) pct exec "$container" -- ash -c "apk update && apk upgrade" ;;
     archlinux) pct exec "$container" -- bash -c "pacman -Syyu --noconfirm" ;;
