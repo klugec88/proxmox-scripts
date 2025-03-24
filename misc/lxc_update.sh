@@ -36,6 +36,7 @@ declare -a containers_needing_reboot=()
 declare -a updated_containers=()
 declare -a unchanged_containers=()
 declare -a skipped_containers=()
+declare -a autoremove_containers=()
 
 function set_locale() {
   container=$1
@@ -59,7 +60,18 @@ function update_container() {
     alpine) pct exec "$container" -- ash -c "LANG=de_DE.UTF-8 apk update && LANG=de_DE.UTF-8 apk upgrade" ;;
     archlinux) pct exec "$container" -- bash -c "LANG=de_DE.UTF-8 pacman -Syyu --noconfirm" ;;
     fedora | rocky | centos | alma) pct exec "$container" -- bash -c "LANG=de_DE.UTF-8 dnf -y update && LANG=de_DE.UTF-8 dnf -y upgrade" ;;
-    ubuntu | debian | devuan) pct exec "$container" -- bash -c "LANG=de_DE.UTF-8 apt-get update && LANG=de_DE.UTF-8 apt-get -yq dist-upgrade" ;;
+    ubuntu | debian | devuan) 
+      pct exec "$container" -- bash -c "LANG=de_DE.UTF-8 apt-get update && LANG=de_DE.UTF-8 apt-get -yq dist-upgrade" 
+      
+      # Prüfen, ob Pakete entfernt werden können
+      autoremove_needed=$(pct exec "$container" -- bash -c "LANG=de_DE.UTF-8 apt-get -s autoremove | grep 'The following packages will be REMOVED' || echo ''")
+      
+      if [[ -n "$autoremove_needed" ]]; then
+        echo "[Info] Führe 'apt autoremove' auf $container aus..."
+        pct exec "$container" -- bash -c "LANG=de_DE.UTF-8 apt-get -yq autoremove"
+        autoremove_containers+=("$container ($name)")
+      fi
+      ;;
     opensuse) pct exec "$container" -- bash -c "LANG=de_DE.UTF-8 zypper ref && LANG=de_DE.UTF-8 zypper --non-interactive dup" ;;
     *) echo "[Warnung] OS $os wird nicht unterstützt oder nicht erkannt." ; return ;;
   esac
@@ -109,4 +121,8 @@ fi
 if [ "${#containers_needing_reboot[@]}" -gt 0 ]; then
   echo -e "\n[Hinweis] Die folgenden Container benötigen einen Neustart:"
   printf '%s\n' "${containers_needing_reboot[@]}"
+fi
+if [ "${#autoremove_containers[@]}" -gt 0 ]; then
+  echo -e "\n[Autoremove durchgeführt in folgenden Containern]:"
+  printf '%s\n' "${autoremove_containers[@]}"
 fi
