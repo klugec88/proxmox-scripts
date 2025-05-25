@@ -54,42 +54,35 @@ function update_container() {
   echo -e "\n[Info] Aktualisiere Container: $container ($name, OS: $os)\n"
   set_locale "$container"
 
-  updates_before=0
-  updates_after=0
+  # Sprache im Container ermitteln
+  locale_in_container=$(pct exec "$container" -- bash -c "echo \$LANG" 2>/dev/null)
+  [[ -z "$locale_in_container" ]] && locale_in_container="de_DE.UTF-8"
+  export_env="env LANG=$locale_in_container LC_ALL=$locale_in_container"
+
+  updates_before=$(pct exec "$container" -- $export_env bash -c "apt-get -s dist-upgrade | grep -c '^Inst ' || true")
 
   case "$os" in
-    alpine)
-      pct exec "$container" -- ash -c "apk update && apk upgrade"
-      ;;
-    archlinux)
-      pct exec "$container" -- bash -c "pacman -Syyu --noconfirm"
-      ;;
-    fedora | rocky | centos | alma)
-      pct exec "$container" -- bash -c "dnf -y update && dnf -y upgrade"
-      ;;
-    ubuntu | debian | devuan)
-      updates_before=$(pct exec "$container" -- bash -c "apt-get -s dist-upgrade | grep -c '^Inst ' || true")
-      pct exec "$container" -- bash -c "apt-get update && apt-get -yq dist-upgrade"
-      
-      autoremove_needed=$(pct exec "$container" -- bash -c "apt-get -s autoremove | grep 'The following packages will be REMOVED' || echo ''")
+    alpine) pct exec "$container" -- ash -c "$export_env apk update && $export_env apk upgrade" ;;
+    archlinux) pct exec "$container" -- bash -c "$export_env pacman -Syyu --noconfirm" ;;
+    fedora | rocky | centos | alma) pct exec "$container" -- bash -c "$export_env dnf -y update && $export_env dnf -y upgrade" ;;
+    ubuntu | debian | devuan) 
+      pct exec "$container" -- bash -c "$export_env apt-get update && $export_env apt-get -yq dist-upgrade"
+
+      # Prüfen, ob Pakete entfernt werden können
+      autoremove_needed=$(pct exec "$container" -- $export_env bash -c "apt-get -s autoremove | grep 'The following packages will be REMOVED' || echo ''")
       if [[ -n "$autoremove_needed" ]]; then
         echo "[Info] Führe 'apt autoremove' auf $container aus..."
-        pct exec "$container" -- bash -c "apt-get -yq autoremove"
+        pct exec "$container" -- $export_env bash -c "apt-get -yq autoremove"
         autoremove_containers+=("$container ($name)")
       fi
-
-      updates_after=$(pct exec "$container" -- bash -c "apt-get -s dist-upgrade | grep -c '^Inst ' || true")
       ;;
-    opensuse)
-      pct exec "$container" -- bash -c "zypper ref && zypper --non-interactive dup"
-      ;;
-    *)
-      echo "[Warnung] OS $os wird nicht unterstützt oder nicht erkannt."
-      return
-      ;;
+    opensuse) pct exec "$container" -- bash -c "$export_env zypper ref && $export_env zypper --non-interactive dup" ;;
+    *) echo "[Warnung] OS $os wird nicht unterstützt oder nicht erkannt." ; return ;;
   esac
 
-  if [[ "$updates_before" -gt 0 && "$updates_after" -eq 0 ]]; then
+  updates_after=$(pct exec "$container" -- $export_env bash -c "apt-get -s dist-upgrade | grep -c '^Inst ' || true")
+
+  if [[ "$updates_before" -gt "0" && "$updates_after" -eq "0" ]]; then
     updated_containers+=("$container ($name)")
   else
     unchanged_containers+=("$container ($name)")
@@ -106,13 +99,12 @@ for container in $(pct list | awk 'NR>1 {print $1}'); do
     skipped_containers+=("$container")
     continue
   fi
-
   status=$(pct status $container | awk '{print $2}')
   if [[ "$status" == "stopped" ]]; then
     echo "[Info] Starte Container $container"
-    pct start $container && sleep 2
+    pct start $container
+    sleep 5
   fi
-
   update_container "$container"
 done
 
