@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Proxmox LXC Updater (Universal)
-# Autor: klugec88
+# Autor: Dein Name
 # Lizenz: MIT
 
 function header_info {
@@ -13,6 +13,7 @@ function header_info {
 / /_/ / /_/ / /_/ / /_/ / /_/  __/  / /___/   / /___  
 \____/ .___/\__,_/\__,_/\__/\___/  /_____/_/|_\____/  
     /_/                                              
+
 EOF
 }
 
@@ -37,20 +38,14 @@ declare -a unchanged_containers=()
 declare -a skipped_containers=()
 declare -a autoremove_containers=()
 
-# Standard-Deutsch-Umgebung
-DE_LOCALE="de_DE.UTF-8"
-EXPORT_ENV="env LANG=$DE_LOCALE LC_ALL=$DE_LOCALE LANGUAGE=de"
-
 function set_locale() {
   container=$1
-  # Sicherstellen, dass locale installiert und korrekt konfiguriert ist
-  current_locale=$(pct exec "$container" -- bash -c "echo \$LANG" 2>/dev/null || echo "")
-  if [[ -z "$current_locale" || "$current_locale" != "$DE_LOCALE" ]]; then
-    echo "[Info] Setze Locale auf $DE_LOCALE im Container $container"
-    pct exec "$container" -- bash -c "apt-get update && apt-get install -y locales"
-    pct exec "$container" -- bash -c "sed -i '/$DE_LOCALE/s/^# //g' /etc/locale.gen && locale-gen"
-    pct exec "$container" -- bash -c "update-locale LANG=$DE_LOCALE"
-  fi
+  # Stelle sicher, dass die deutsche Locale generiert ist
+  pct exec "$container" -- bash -c "sed -i -e 's/# de_DE.UTF-8 UTF-8/de_DE.UTF-8 UTF-8/' /etc/locale.gen && locale-gen de_DE.UTF-8" 2>/dev/null || true
+  # Setze die Locale auf Deutsch
+  pct exec "$container" -- bash -c "update-locale LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8" 2>/dev/null || true
+  # Exportiere die Variablen für die aktuelle Session
+  pct exec "$container" -- bash -c "export LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8"
 }
 
 function update_container() {
@@ -60,41 +55,39 @@ function update_container() {
   echo -e "\n[Info] Aktualisiere Container: $container ($name, OS: $os)\n"
   set_locale "$container"
 
+  # Verwende konsistent die deutsche Locale
+  export_env="env LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8"
+
   updates_before=0
-  updates_after=0
+  if [[ "$os" == "ubuntu" || "$os" == "debian" || "$os" == "devuan" ]]; then
+    updates_before=$(pct exec "$container" -- $export_env bash -c "apt-get -s dist-upgrade | grep -c '^Inst ' || true")
+  fi
 
   case "$os" in
-    alpine)
-      pct exec "$container" -- sh -c "$EXPORT_ENV apk update && $EXPORT_ENV apk upgrade"
-      ;;
-    archlinux)
-      pct exec "$container" -- bash -c "$EXPORT_ENV pacman -Syyu --noconfirm"
-      ;;
-    fedora | rocky | centos | alma)
-      pct exec "$container" -- bash -c "$EXPORT_ENV dnf -y update && $EXPORT_ENV dnf -y upgrade"
-      ;;
-    ubuntu | debian | devuan)
-      updates_before=$(pct exec "$container" -- $EXPORT_ENV bash -c "apt-get -s dist-upgrade | grep -c '^Inst ' || true")
-      pct exec "$container" -- $EXPORT_ENV bash -c "apt-get update && apt-get -yq dist-upgrade"
+    alpine) pct exec "$container" -- ash -c "$export_env apk update && $export_env apk upgrade" ;;
+    archlinux) pct exec "$container" -- bash -c "$export_env pacman -Syyu --noconfirm" ;;
+    fedora | rocky | centos | alma) pct exec "$container" -- bash -c "$export_env dnf -y update && $export_env dnf -y upgrade" ;;
+    ubuntu | debian | devuan) 
+      pct exec "$container" -- bash -c "$export_env apt-get update && $export_env apt-get -yq dist-upgrade"
 
-      autoremove_needed=$(pct exec "$container" -- $EXPORT_ENV bash -c "apt-get -s autoremove | grep 'The following packages will be REMOVED' || echo ''")
+      # Prüfen, ob Pakete entfernt werden können
+      autoremove_needed=$(pct exec "$container" -- $export_env bash -c "apt-get -s autoremove | grep -E '^Remv ' || echo ''")
       if [[ -n "$autoremove_needed" ]]; then
         echo "[Info] Führe 'apt autoremove' auf $container aus..."
-        pct exec "$container" -- $EXPORT_ENV bash -c "apt-get -yq autoremove"
+        pct exec "$container" -- $export_env bash -c "apt-get -yq autoremove"
         autoremove_containers+=("$container ($name)")
       fi
-      updates_after=$(pct exec "$container" -- $EXPORT_ENV bash -c "apt-get -s dist-upgrade | grep -c '^Inst ' || true")
       ;;
-    opensuse)
-      pct exec "$container" -- bash -c "$EXPORT_ENV zypper ref && $EXPORT_ENV zypper --non-interactive dup"
-      ;;
-    *)
-      echo "[Warnung] OS $os wird nicht unterstützt oder nicht erkannt."
-      return
-      ;;
+    opensuse) pct exec "$container" -- bash -c "$export_env zypper ref && $export_env zypper --non-interactive dup" ;;
+    *) echo "[Warnung] OS $os wird nicht unterstützt oder nicht erkannt." ; return ;;
   esac
 
-  if [[ "$updates_before" -gt 0 && "$updates_after" -eq 0 ]]; then
+  updates_after=0
+  if [[ "$os" == "ubuntu" || "$os" == "debian" || "$os" == "devuan" ]]; then
+    updates_after=$(pct exec "$container" -- $export_env bash -c "apt-get -s dist-upgrade | grep -c '^Inst ' || true")
+  fi
+
+  if [[ "$updates_before" -gt "0" && "$updates_after" -eq "0" ]]; then
     updated_containers+=("$container ($name)")
   else
     unchanged_containers+=("$container ($name)")
