@@ -37,15 +37,40 @@ declare -a updated_containers=()
 declare -a unchanged_containers=()
 declare -a skipped_containers=()
 declare -a autoremove_containers=()
+declare -a custom_updates=()
 
 function set_locale() {
   container=$1
-  # Stelle sicher, dass die deutsche Locale generiert ist
   pct exec "$container" -- bash -c "sed -i -e 's/# de_DE.UTF-8 UTF-8/de_DE.UTF-8 UTF-8/' /etc/locale.gen && locale-gen de_DE.UTF-8" 2>/dev/null || true
-  # Setze die Locale auf Deutsch
   pct exec "$container" -- bash -c "update-locale LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8" 2>/dev/null || true
-  # Exportiere die Variablen für die aktuelle Session
   pct exec "$container" -- bash -c "export LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8"
+}
+
+function update_custom_apps() {
+  container=$1
+  name=$(pct exec "$container" hostname 2>/dev/null || echo "Unbekannt")
+  
+  # Traefik Update
+  if pct exec "$container" -- bash -c "[ -f /usr/local/bin/traefik ]"; then
+    echo "[Info] Traefik gefunden in $container ($name), versuche Update..."
+    traefik_version=$(pct exec "$container" -- bash -c "/usr/local/bin/traefik version 2>/dev/null | head -n 1 | awk '{print \$3}'" || echo "")
+    if [ -n "$traefik_version" ]; then
+      latest_version=$(pct exec "$container" -- bash -c "curl -s https://api.github.com/repos/traefik/traefik/releases/latest | grep 'tag_name' | cut -d '\"' -f 4 | tr -d 'v'")
+      
+      if [ "$traefik_version" != "$latest_version" ]; then
+        echo "[Info] Aktualisiere Traefik von $traefik_version auf $latest_version"
+        pct exec "$container" -- bash -c "curl -fsSL -o /tmp/traefik_linux-amd64.tar.gz https://github.com/traefik/traefik/releases/download/v${latest_version}/traefik_v${latest_version}_linux-amd64.tar.gz"
+        pct exec "$container" -- bash -c "tar -xzf /tmp/traefik_linux-amd64.tar.gz -C /usr/local/bin/ traefik && rm /tmp/traefik_linux-amd64.tar.gz"
+        new_version=$(pct exec "$container" -- bash -c "/usr/local/bin/traefik version 2>/dev/null | head -n 1 | awk '{print \$3}'")
+        custom_updates+=("$container ($name): Traefik von $traefik_version auf $new_version aktualisiert")
+        pct exec "$container" -- bash -c "systemctl restart traefik.service || true"
+      else
+        echo "[Info] Traefik ist bereits auf der neuesten Version ($traefik_version)"
+      fi
+    fi
+  fi
+
+  # Hier können weitere benutzerdefinierte Updates hinzugefügt werden
 }
 
 function update_container() {
@@ -55,7 +80,6 @@ function update_container() {
   echo -e "\n[Info] Aktualisiere Container: $container ($name, OS: $os)\n"
   set_locale "$container"
 
-  # Verwende konsistent die deutsche Locale
   export_env="env LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8"
 
   updates_before=0
@@ -70,7 +94,6 @@ function update_container() {
     ubuntu | debian | devuan) 
       pct exec "$container" -- bash -c "$export_env apt-get update && $export_env apt-get -yq dist-upgrade"
 
-      # Prüfen, ob Pakete entfernt werden können
       autoremove_needed=$(pct exec "$container" -- $export_env bash -c "apt-get -s autoremove | grep -E '^Remv ' || echo ''")
       if [[ -n "$autoremove_needed" ]]; then
         echo "[Info] Führe 'apt autoremove' auf $container aus..."
@@ -92,6 +115,9 @@ function update_container() {
   else
     unchanged_containers+=("$container ($name)")
   fi
+
+  # Benutzerdefinierte Updates durchführen
+  update_custom_apps "$container"
 
   if pct exec "$container" -- [ -e "/var/run/reboot-required" ]; then
     containers_needing_reboot+=("$container ($name)")
@@ -134,4 +160,8 @@ fi
 if [ "${#autoremove_containers[@]}" -gt 0 ]; then
   echo -e "\n[Autoremove durchgeführt in folgenden Containern]:"
   printf '%s\n' "${autoremove_containers[@]}"
+fi
+if [ "${#custom_updates[@]}" -gt 0 ]; then
+  echo -e "\n[Benutzerdefinierte Updates]:"
+  printf '%s\n' "${custom_updates[@]}"
 fi
